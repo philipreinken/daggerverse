@@ -1,7 +1,9 @@
 package main
 
 import (
+	"context"
 	"dagger/shopware/internal/dagger"
+	"encoding/base64"
 )
 
 const (
@@ -14,22 +16,24 @@ const (
 	shopwareProjectRoot = "/var/www/html"
 )
 
-func (s *Shopware) Base() *dagger.Container {
+func (s *Shopware) Base(ctx context.Context) *dagger.Container {
 	return dag.Container().From(shopwareBaseImage).
 		With(WithBaseEnvironment(s)).
-		With(WithBuildResult(s, dagger.ContainerWithMountedDirectoryOpts{
+		With(WithBuildResult(s, ctx, dagger.ContainerWithMountedDirectoryOpts{
 			Owner: shopwareUser,
 		})).
-		With(WithDefaultVolumes(s, dagger.ContainerWithMountedCacheOpts{
+		With(WithDefaultVolumes(s, ctx, dagger.ContainerWithMountedCacheOpts{
 			Owner: shopwareUser,
 		}))
 }
 
-func (s *Shopware) Build() *dagger.Directory {
+func (s *Shopware) Build(ctx context.Context) *dagger.Directory {
 	return dag.Container().From(shopwareCliImage).
 		With(WithBaseEnvironment(s)).
-		With(WithShopwareSource(s)).
-		With(WithDefaultVolumes(s)).
+		With(WithConfigHMAC(s, ctx)).
+		With(WithShopwareSource(s, ctx)).
+		With(WithComposerCache(s, ctx)).
+		With(WithDefaultVolumes(s, ctx)).
 		WithExec([]string{"shopware-cli", "project", "ci", "--with-dev-dependencies", shopwareProjectRoot}).
 		Directory(shopwareProjectRoot)
 }
@@ -41,6 +45,7 @@ func WithBaseEnvironment(s *Shopware) dagger.WithContainerFunc {
 				"APP_ENV":                              "prod",
 				"APP_DEBUG":                            "1",
 				"APP_URL":                              "http://127.0.0.1:8000",
+				"APP_SECRET":                           base64.RawURLEncoding.EncodeToString([]byte("0000AAAAshopware0000AAAAshopware")),
 				"BLUE_GREEN_DEPLOYMENT":                "0",
 				"COMPOSER_PLUGIN_LOADER":               "1",
 				"COMPOSER_ROOT_VERSION":                "6.6.9999999-dev",
@@ -56,7 +61,7 @@ func WithBaseEnvironment(s *Shopware) dagger.WithContainerFunc {
 	}
 }
 
-func WithShopwareSource(s *Shopware, opts ...dagger.ContainerWithMountedDirectoryOpts) dagger.WithContainerFunc {
+func WithShopwareSource(s *Shopware, ctx context.Context, opts ...dagger.ContainerWithMountedDirectoryOpts) dagger.WithContainerFunc {
 	return func(c *dagger.Container) *dagger.Container {
 		return c.
 			WithMountedDirectory(shopwareProjectRoot, s.Source, opts...).
@@ -64,7 +69,19 @@ func WithShopwareSource(s *Shopware, opts ...dagger.ContainerWithMountedDirector
 	}
 }
 
-func WithDefaultVolumes(s *Shopware, opts ...dagger.ContainerWithMountedCacheOpts) dagger.WithContainerFunc {
+func WithComposerCache(s *Shopware, ctx context.Context) dagger.WithContainerFunc {
+	return func(c *dagger.Container) *dagger.Container {
+		if composerHome, err := c.EnvVariable(ctx, "COMPOSER_HOME"); err == nil && composerHome != "" {
+			return c.WithMountedCache(composerHome, dag.CacheVolume("composer"), dagger.ContainerWithMountedCacheOpts{
+				Expand: true,
+			})
+		} else {
+			return c.WithMountedCache("/root/.composer", dag.CacheVolume("composer"))
+		}
+	}
+}
+
+func WithDefaultVolumes(s *Shopware, ctx context.Context, opts ...dagger.ContainerWithMountedCacheOpts) dagger.WithContainerFunc {
 	return func(c *dagger.Container) *dagger.Container {
 		return c.
 			WithMountedCache(shopwareProjectRoot+"/files", dag.CacheVolume("files"), opts...).
@@ -76,11 +93,24 @@ func WithDefaultVolumes(s *Shopware, opts ...dagger.ContainerWithMountedCacheOpt
 	}
 }
 
-func WithBuildResult(s *Shopware, opts ...dagger.ContainerWithMountedDirectoryOpts) dagger.WithContainerFunc {
+func WithBuildResult(s *Shopware, ctx context.Context, opts ...dagger.ContainerWithMountedDirectoryOpts) dagger.WithContainerFunc {
 	return func(c *dagger.Container) *dagger.Container {
 		return c.
-			WithMountedDirectory(shopwareProjectRoot, s.Build(), opts...).
+			WithMountedDirectory(shopwareProjectRoot, s.Build(ctx), opts...).
 			WithWorkdir(shopwareProjectRoot)
+	}
+}
+
+func WithConfigHMAC(s *Shopware, ctx context.Context) dagger.WithContainerFunc {
+	config := `
+shopware:
+  api:
+    jwt_key:
+      use_app_secret: true
+`
+	return func(c *dagger.Container) *dagger.Container {
+		return c.
+			WithNewFile(shopwareProjectRoot+"/config/90-hmac-secret.yaml", config)
 	}
 }
 
