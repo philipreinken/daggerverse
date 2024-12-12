@@ -1,13 +1,19 @@
 package main
 
 import (
-	"context"
 	"dagger/shopware/internal/dagger"
 )
 
-func WithInstall(s *Shopware, ctx context.Context) dagger.WithContainerFunc {
+func WithInstall() dagger.WithContainerFunc {
 	return func(c *dagger.Container) *dagger.Container {
 		return c.
-			WithExec([]string{"vendor/bin/shopware-deployment-helper", "run", "--skip-theme-compile", "--skip-assets-install"})
+			WithExec([]string{"bin/console", "system:install", "--basic-setup", "--force"})
+	}
+}
+
+func WithFullInstall() dagger.WithContainerFunc {
+	return func(c *dagger.Container) *dagger.Container {
+		return c.
+			WithExec([]string{"composer", "setup"})
 	}
 }

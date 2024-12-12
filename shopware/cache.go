@@ -1,11 +1,10 @@
 package main
 
 import (
-	"context"
 	"dagger/shopware/internal/dagger"
 )
 
-func WithCache(s *Shopware, ctx context.Context) dagger.WithContainerFunc {
+func WithCache() dagger.WithContainerFunc {
 	cache := dag.Container().From("valkey/valkey:latest").
 		WithExposedPort(6379).
 		AsService()

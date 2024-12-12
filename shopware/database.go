@@ -1,11 +1,10 @@
 package main
 
 import (
-	"context"
 	"dagger/shopware/internal/dagger"
 )
 
-func WithDatabase(s *Shopware, ctx context.Context) dagger.WithContainerFunc {
+func WithDatabase() dagger.WithContainerFunc {
 	database := dag.Container().From("mysql:8.0").
 		With(EnvVariables(map[string]string{
 			"MYSQL_ALLOW_EMPTY_PASSWORD": "yes",
