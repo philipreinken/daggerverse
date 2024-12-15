@@ -3,33 +3,198 @@ package main
 import (
 	"context"
 	"dagger/shopware/internal/dagger"
+	"fmt"
+	"golang.org/x/sync/errgroup"
+	"strings"
 )
 
-func (s *Shopware) Ecs(ctx context.Context) *dagger.Container {
+var (
+	integrationTestPaths = []string{
+		"tests/integration/Administration",
+		"tests/integration/Core/Checkout",
+		"tests/integration/Core/Content",
+		"tests/integration/Core/Framework",
+		"tests/integration/Core/Installer",
+		"tests/integration/Core/Maintenance",
+		"tests/integration/Core/System",
+		"tests/integration/Elasticsearch",
+		"tests/integration/Storefront",
+	}
+)
+
+func (s *Shopware) Ecs(ctx context.Context) (string, error) {
 	return s.
-		DefaultContainer(ctx).
+		BaseContainer(ctx).
 		With(WithCsFixerCache()).
-		WithExec([]string{"composer", "run", "ecs"})
+		WithExec([]string{"composer", "run", "ecs"}).
+		Stdout(ctx)
 }
 
-func (s *Shopware) LintChangelog(ctx context.Context) *dagger.Container {
+func (s *Shopware) LintChangelog(ctx context.Context) (string, error) {
 	return s.
-		DefaultContainer(ctx).
-		WithExec([]string{"composer", "run", "lint:changelog"})
+		BaseContainer(ctx).
+		WithExec([]string{"composer", "run", "lint:changelog"}).
+		Stdout(ctx)
 }
 
-func (s *Shopware) LintSnippets(ctx context.Context) *dagger.Container {
+func (s *Shopware) LintSnippets(ctx context.Context) (string, error) {
 	return s.
-		DefaultContainer(ctx).
-		WithExec([]string{"composer", "run", "lint:snippets"})
+		BaseContainer(ctx).
+		WithExec([]string{"composer", "run", "lint:snippets"}).
+		Stdout(ctx)
 }
 
-func (s *Shopware) Phpstan(ctx context.Context) *dagger.Container {
+func (s *Shopware) Phpstan(ctx context.Context) (string, error) {
 	return s.
 		BasicStack(ctx).
 		With(WithInstall()).
 		WithExec([]string{"composer", "run", "framework:schema:dump"}).
-		WithExec([]string{"composer", "run", "phpstan"})
+		WithExec([]string{"composer", "run", "phpstan"}).
+		Stdout(ctx)
+}
+
+// Executes a phpunit test suite
+func (s *Shopware) Phpunit(
+	ctx context.Context,
+	// the name of the testsuite to run.
+	// possible values are: unit, migration
+	// +optional
+	// +default="unit"
+	testsuite string,
+	// a subpath the testsuite should be limited to
+	// possible values are: tests/integration/Administration, tests/integration/Core/Checkout, tests/integration/Core/Content, tests/integration/Core/Framework, tests/integration/Core/Installer, tests/integration/Core/Maintenance, tests/integration/Core/System, tests/integration/Elasticsearch, tests/integration/Storefront, .
+	// +optional
+	path string,
+	// whether to run the testsuite with coverage
+	// +optional
+	// +default=false
+	coverage bool,
+	// whether to stop the test execution after the first failure
+	// +optional
+	// +default=true
+	stopOnFailure bool,
+) *dagger.Container {
+	cmd := []string{"php", "-d", "memory_limit=-1", "vendor/bin/phpunit", "--testsuite", testsuite}
+
+	if stopOnFailure {
+		cmd = append(cmd, "--stop-on-failure")
+	}
+
+	if coverage {
+		cmd = append(cmd, "--coverage-cobertura", "coverage.xml")
+	}
+
+	if path != "" {
+		cmd = append(cmd, "--", path)
+	}
+
+	c := s.
+		BasicStack(ctx).
+		WithEnvVariable("APP_ENV", "test")
+
+	if testsuite != "unit" {
+		c = c.With(WithTestInstall())
+	}
+
+	if testsuite == "integration" {
+		c = c.With(WithWebserver(c))
+	}
+
+	return c.WithExec(cmd)
+}
+
+func (s *Shopware) PhpunitUnit(
+	ctx context.Context,
+	// whether to run the testsuite with coverage
+	// +optional
+	// +default=false
+	coverage bool,
+) (string, error) {
+	return s.
+		Phpunit(ctx, "unit", "", coverage, true).
+		Stdout(ctx)
+}
+
+func (s *Shopware) PhpunitMigration(
+	ctx context.Context,
+	// whether to run the testsuite with coverage
+	// +optional
+	// +default=false
+	coverage bool,
+) (string, error) {
+	return s.
+		Phpunit(ctx, "migration", "", coverage, true).
+		Stdout(ctx)
+}
+
+func (s *Shopware) PhpunitIntegration(
+	ctx context.Context,
+	// the name of the testsuite to run
+	// possible values are: administration, checkout, content, framework, installer, maintenance, system, elasticsearch, storefront
+	testsuite string,
+	// whether to run the testsuite with coverage
+	// +optional
+	// +default=false
+	coverage bool,
+) (string, error) {
+	for _, path := range integrationTestPaths {
+		if strings.HasSuffix(strings.ToLower(path), testsuite) {
+			return s.
+				Phpunit(ctx, "integration", path, coverage, true).
+				Stdout(ctx)
+		}
+	}
+
+	return "", fmt.Errorf("unknown testsuite: %s", testsuite)
+}
+
+// Run all integration tests consecutively
+func (s *Shopware) PhpunitIntegrationAll(ctx context.Context) (string, error) {
+	var output string
+
+	for _, path := range integrationTestPaths {
+		out, err := s.
+			Phpunit(ctx, "integration", path, false, true).
+			Stdout(ctx)
+		if err != nil {
+			return output, err
+		}
+		output += out
+	}
+
+	return output, nil
+}
+
+// !EXPERIMENTAL - Run all integration tests in parallel
+func (s *Shopware) PhpunitIntegrationAllParallel(
+	ctx context.Context,
+	// number of parallel tests to run
+	// +optional
+	// +default=4
+	parallel int,
+) (string, error) {
+	var output string
+
+	// TODO: Use a distinct DB for each test suite
+
+	g, gctx := errgroup.WithContext(ctx)
+	g.SetLimit(parallel) // Limit the number of parallel tests
+
+	for _, path := range integrationTestPaths {
+		path := path
+		g.Go(func() error {
+			out, err := s.
+				Phpunit(gctx, "integration", path, false, true).
+				Stdout(gctx)
+			if err != nil {
+				return err
+			}
+			output += out
+			return nil
+		})
+	}
+
+	return output, g.Wait()
 }
 
 func WithCsFixerCache() dagger.WithContainerFunc {

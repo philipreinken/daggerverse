@@ -7,12 +7,12 @@ import (
 
 func (s *Shopware) BasicStack(ctx context.Context) *dagger.Container {
 	return s.
-		DefaultContainer(ctx).
+		BaseContainer(ctx).
 		With(WithCache()).
 		With(WithDatabase())
 }
 
-func (s *Shopware) Web(ctx context.Context) *dagger.Service {
+func (s *Shopware) DevStack(ctx context.Context) *dagger.Service {
 	return s.
 		BasicStack(ctx).
 		With(WithFullInstall()).

@@ -16,26 +16,21 @@ const (
 )
 
 func (s *Shopware) BaseContainer(ctx context.Context) *dagger.Container {
-	return dag.Container().From(shopwareBaseImage).
+	return dag.Container().From(shopwareBaseImage).WithUser(shopwareUser).
 		With(WithBuildDependencies()).
 		With(WithBaseEnvironment()).
-		With(WithComposerCache(s, ctx)).
-		With(WithNpmCache(s, ctx)).
-		With(WithShopwareSource(s, ctx, shopwareProjectRoot)).
-		With(WithRuntimeVolumes(shopwareProjectRoot)).
-		With(WithDependencies(shopwareProjectRoot)).
-		With(WithConfigHMAC(s, ctx, shopwareProjectRoot))
+		With(WithComposerCache(ctx)).
+		With(WithNpmCache(ctx)).
+		With(WithShopwareSource(s)).
+		With(WithComposerDependencies(shopwareProjectRoot)).
+		With(WithConfigHMAC(shopwareProjectRoot)).
+		With(WithRuntimeVolumes(shopwareProjectRoot))
 }
 
 func (s *Shopware) SourceWithVendor(ctx context.Context) *dagger.Directory {
 	return s.
 		BaseContainer(ctx).
 		Directory(shopwareProjectRoot)
-}
-
-func (s *Shopware) DefaultContainer(ctx context.Context) *dagger.Container {
-	return s.
-		BaseContainer(ctx)
 }
 
 func WithBuildDependencies() dagger.WithContainerFunc {
@@ -67,7 +62,11 @@ func WithBaseEnvironment() dagger.WithContainerFunc {
 	}
 }
 
-func WithShopwareSource(s *Shopware, ctx context.Context, path string, opts ...dagger.ContainerWithMountedDirectoryOpts) dagger.WithContainerFunc {
+func WithShopwareSource(s *Shopware, opts ...dagger.ContainerWithMountedDirectoryOpts) dagger.WithContainerFunc {
+	if opts == nil {
+		opts = []dagger.ContainerWithMountedDirectoryOpts{}
+	}
+
 	opts = append(opts, dagger.ContainerWithMountedDirectoryOpts{
 		Owner: shopwareUser,
 	})
@@ -78,13 +77,17 @@ func WithShopwareSource(s *Shopware, ctx context.Context, path string, opts ...d
 	}
 }
 
-func WithComposerCache(s *Shopware, ctx context.Context, opts ...dagger.ContainerWithMountedCacheOpts) dagger.WithContainerFunc {
-	return func(c *dagger.Container) *dagger.Container {
-		opts = append(opts, dagger.ContainerWithMountedCacheOpts{
-			Expand: true,
-			Owner:  shopwareUser,
-		})
+func WithComposerCache(ctx context.Context, opts ...dagger.ContainerWithMountedCacheOpts) dagger.WithContainerFunc {
+	if opts == nil {
+		opts = []dagger.ContainerWithMountedCacheOpts{}
+	}
 
+	opts = append(opts, dagger.ContainerWithMountedCacheOpts{
+		Expand: true,
+		Owner:  shopwareUser,
+	})
+
+	return func(c *dagger.Container) *dagger.Container {
 		if composerHome, err := c.EnvVariable(ctx, "COMPOSER_HOME"); err == nil && composerHome != "" {
 			return c.WithMountedCache(composerHome, dag.CacheVolume("composer"), opts...)
 		} else {
@@ -93,13 +96,17 @@ func WithComposerCache(s *Shopware, ctx context.Context, opts ...dagger.Containe
 	}
 }
 
-func WithNpmCache(s *Shopware, ctx context.Context, opts ...dagger.ContainerWithMountedCacheOpts) dagger.WithContainerFunc {
-	return func(c *dagger.Container) *dagger.Container {
-		opts = append(opts, dagger.ContainerWithMountedCacheOpts{
-			Expand: true,
-			Owner:  shopwareUser,
-		})
+func WithNpmCache(ctx context.Context, opts ...dagger.ContainerWithMountedCacheOpts) dagger.WithContainerFunc {
+	if opts == nil {
+		opts = []dagger.ContainerWithMountedCacheOpts{}
+	}
 
+	opts = append(opts, dagger.ContainerWithMountedCacheOpts{
+		Expand: true,
+		Owner:  shopwareUser,
+	})
+
+	return func(c *dagger.Container) *dagger.Container {
 		if npmCache, err := c.EnvVariable(ctx, "NPM_CONFIG_CACHE"); err == nil && npmCache != "" {
 			return c.WithMountedCache(npmCache, dag.CacheVolume("npm"), opts...)
 		} else {
@@ -109,6 +116,10 @@ func WithNpmCache(s *Shopware, ctx context.Context, opts ...dagger.ContainerWith
 }
 
 func WithRuntimeVolumes(path string, opts ...dagger.ContainerWithMountedCacheOpts) dagger.WithContainerFunc {
+	if opts == nil {
+		opts = []dagger.ContainerWithMountedCacheOpts{}
+	}
+
 	opts = append(opts, dagger.ContainerWithMountedCacheOpts{
 		Owner: shopwareUser,
 	})
@@ -124,13 +135,17 @@ func WithRuntimeVolumes(path string, opts ...dagger.ContainerWithMountedCacheOpt
 	}
 }
 
-func WithConfigHMAC(s *Shopware, ctx context.Context, path string, opts ...dagger.ContainerWithNewFileOpts) dagger.WithContainerFunc {
+func WithConfigHMAC(path string, opts ...dagger.ContainerWithNewFileOpts) dagger.WithContainerFunc {
 	config := `
 shopware:
   api:
     jwt_key:
       use_app_secret: true
 `
+
+	if opts == nil {
+		opts = []dagger.ContainerWithNewFileOpts{}
+	}
 
 	opts = append(opts, dagger.ContainerWithNewFileOpts{
 		Owner: shopwareUser,
@@ -142,9 +157,9 @@ shopware:
 	}
 }
 
-func WithDependencies(path string) dagger.WithContainerFunc {
+func WithComposerDependencies(path string) dagger.WithContainerFunc {
 	return func(c *dagger.Container) *dagger.Container {
 		return c.
-			WithExec([]string{"composer", "install", "-d", path, "-o", "-n"})
+			WithExec([]string{"composer", "install", "-d", path, "-o", "-n", "--no-plugins", "--no-scripts"})
 	}
 }

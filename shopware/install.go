@@ -17,3 +17,10 @@ func WithFullInstall() dagger.WithContainerFunc {
 			WithExec([]string{"composer", "setup"})
 	}
 }
+
+func WithTestInstall() dagger.WithContainerFunc {
+	return func(c *dagger.Container) *dagger.Container {
+		return c.
+			WithExec([]string{"php", "src/Core/TestBootstrap.php"})
+	}
+}
