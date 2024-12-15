@@ -36,7 +36,10 @@ func (s *Shopware) SourceWithVendor(ctx context.Context) *dagger.Directory {
 func WithBuildDependencies() dagger.WithContainerFunc {
 	return func(c *dagger.Container) *dagger.Container {
 		return c.
-			WithFile("/usr/local/bin/composer", dag.Container().From("composer:2").File("/usr/bin/composer"))
+			WithFile("/usr/local/bin/composer", dag.Container().From("composer:2").File("/usr/bin/composer")).
+			WithUser("root:root").
+			WithExec([]string{"apk", "add", "--no-cache", "nodejs", "npm", "bash"}).
+			WithUser(shopwareUser)
 	}
 }
 
@@ -131,6 +134,7 @@ func WithRuntimeVolumes(path string, opts ...dagger.ContainerWithMountedCacheOpt
 			WithMountedCache(path+"/public/media", dag.CacheVolume("media"), opts...).
 			WithMountedCache(path+"/public/thumbnail", dag.CacheVolume("thumbnail"), opts...).
 			WithMountedCache(path+"/public/sitemap", dag.CacheVolume("sitemap"), opts...).
+			WithDirectory(path+"/var", dag.Directory(), dagger.ContainerWithDirectoryOpts{Owner: shopwareUser}).
 			WithMountedCache(path+"/var/cache", dag.CacheVolume("http_cache"), opts...)
 	}
 }
