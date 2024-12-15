@@ -7,7 +7,7 @@ import (
 
 func (s *Shopware) BasicStack(ctx context.Context) *dagger.Container {
 	return s.
-		BaseWithDependencies(ctx).
+		DefaultContainer(ctx).
 		With(WithCache()).
 		With(WithDatabase())
 }

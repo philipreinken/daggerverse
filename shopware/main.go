@@ -16,10 +16,11 @@ func New(
 	if Source == nil {
 		Source = dag.Git(
 			"https://github.com/shopware/shopware.git",
-			dagger.GitOpts{KeepGitDir: true},
 		).
 			Branch("trunk").
-			Tree()
+			Tree(dagger.GitRefTreeOpts{
+				DiscardGitDir: false,
+			})
 	}
 
 	return &Shopware{

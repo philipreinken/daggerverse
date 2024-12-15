@@ -15,31 +15,33 @@ const (
 	shopwareProjectRoot = "/var/www/html"
 )
 
-func (s *Shopware) Base(ctx context.Context) *dagger.Container {
+func (s *Shopware) BaseContainer(ctx context.Context) *dagger.Container {
 	return dag.Container().From(shopwareBaseImage).
 		With(WithBuildDependencies()).
 		With(WithBaseEnvironment()).
-		With(WithShopwareSource(s, ctx)).
-		With(WithDefaultVolumes(s, ctx)).
 		With(WithComposerCache(s, ctx)).
 		With(WithNpmCache(s, ctx)).
-		With(WithConfigHMAC(s, ctx)).
-		WithWorkdir(shopwareProjectRoot)
+		With(WithShopwareSource(s, ctx, shopwareProjectRoot)).
+		With(WithRuntimeVolumes(shopwareProjectRoot)).
+		With(WithDependencies(shopwareProjectRoot)).
+		With(WithConfigHMAC(s, ctx, shopwareProjectRoot))
 }
 
-func (s *Shopware) BaseWithDependencies(ctx context.Context) *dagger.Container {
+func (s *Shopware) SourceWithVendor(ctx context.Context) *dagger.Directory {
 	return s.
-		Base(ctx).
-		With(WithDependencies())
+		BaseContainer(ctx).
+		Directory(shopwareProjectRoot)
+}
+
+func (s *Shopware) DefaultContainer(ctx context.Context) *dagger.Container {
+	return s.
+		BaseContainer(ctx)
 }
 
 func WithBuildDependencies() dagger.WithContainerFunc {
 	return func(c *dagger.Container) *dagger.Container {
 		return c.
-			WithUser("root:root").
-			WithFile("/usr/local/bin/composer", c.From("composer:2").File("/usr/bin/composer")).
-			WithExec([]string{"apk", "add", "--no-cache", "nodejs", "npm", "bash"}).
-			WithUser(shopwareUser)
+			WithFile("/usr/local/bin/composer", dag.Container().From("composer:2").File("/usr/bin/composer"))
 	}
 }
 
@@ -65,7 +67,7 @@ func WithBaseEnvironment() dagger.WithContainerFunc {
 	}
 }
 
-func WithShopwareSource(s *Shopware, ctx context.Context, opts ...dagger.ContainerWithMountedDirectoryOpts) dagger.WithContainerFunc {
+func WithShopwareSource(s *Shopware, ctx context.Context, path string, opts ...dagger.ContainerWithMountedDirectoryOpts) dagger.WithContainerFunc {
 	opts = append(opts, dagger.ContainerWithMountedDirectoryOpts{
 		Owner: shopwareUser,
 	})
@@ -106,23 +108,23 @@ func WithNpmCache(s *Shopware, ctx context.Context, opts ...dagger.ContainerWith
 	}
 }
 
-func WithDefaultVolumes(s *Shopware, ctx context.Context, opts ...dagger.ContainerWithMountedCacheOpts) dagger.WithContainerFunc {
+func WithRuntimeVolumes(path string, opts ...dagger.ContainerWithMountedCacheOpts) dagger.WithContainerFunc {
 	opts = append(opts, dagger.ContainerWithMountedCacheOpts{
 		Owner: shopwareUser,
 	})
 
 	return func(c *dagger.Container) *dagger.Container {
 		return c.
-			WithMountedCache(shopwareProjectRoot+"/files", dag.CacheVolume("files"), opts...).
-			WithMountedCache(shopwareProjectRoot+"/public/theme", dag.CacheVolume("theme"), opts...).
-			WithMountedCache(shopwareProjectRoot+"/public/media", dag.CacheVolume("media"), opts...).
-			WithMountedCache(shopwareProjectRoot+"/public/thumbnail", dag.CacheVolume("thumbnail"), opts...).
-			WithMountedCache(shopwareProjectRoot+"/public/sitemap", dag.CacheVolume("sitemap"), opts...).
-			WithMountedCache(shopwareProjectRoot+"/var/cache", dag.CacheVolume("http_cache"), opts...)
+			WithMountedCache(path+"/files", dag.CacheVolume("files"), opts...).
+			WithMountedCache(path+"/public/theme", dag.CacheVolume("theme"), opts...).
+			WithMountedCache(path+"/public/media", dag.CacheVolume("media"), opts...).
+			WithMountedCache(path+"/public/thumbnail", dag.CacheVolume("thumbnail"), opts...).
+			WithMountedCache(path+"/public/sitemap", dag.CacheVolume("sitemap"), opts...).
+			WithMountedCache(path+"/var/cache", dag.CacheVolume("http_cache"), opts...)
 	}
 }
 
-func WithConfigHMAC(s *Shopware, ctx context.Context, opts ...dagger.ContainerWithNewFileOpts) dagger.WithContainerFunc {
+func WithConfigHMAC(s *Shopware, ctx context.Context, path string, opts ...dagger.ContainerWithNewFileOpts) dagger.WithContainerFunc {
 	config := `
 shopware:
   api:
@@ -136,13 +138,13 @@ shopware:
 
 	return func(c *dagger.Container) *dagger.Container {
 		return c.
-			WithNewFile(shopwareProjectRoot+"/config/packages/90-hmac-secret.yaml", config, opts...)
+			WithNewFile(path+"/config/packages/90-hmac-secret.yaml", config, opts...)
 	}
 }
 
-func WithDependencies() dagger.WithContainerFunc {
+func WithDependencies(path string) dagger.WithContainerFunc {
 	return func(c *dagger.Container) *dagger.Container {
 		return c.
-			WithExec([]string{"composer", "install", "-o", "-n"})
+			WithExec([]string{"composer", "install", "-d", path, "-o", "-n"})
 	}
 }
