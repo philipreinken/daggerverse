@@ -2,8 +2,11 @@ package main
 
 import (
 	"dagger/shopware/internal/dagger"
+	"fmt"
+	"strings"
 )
 
+// FIXME: This will only work in combination with a minio/S3 service, since the `public` directory is not synced between containers
 func WithWebserver(shopwareContainer *dagger.Container) dagger.WithContainerFunc {
 	shopware := shopwareContainer.
 		WithExposedPort(8000).
@@ -18,5 +21,16 @@ func WithWebserver(shopwareContainer *dagger.Container) dagger.WithContainerFunc
 				"STOREFRONT_PROXY_URL": "http://shopware:8000",
 			}))
 
+	}
+}
+
+func WithWebServerAndExec(exec []string) dagger.WithContainerFunc {
+	cmdSrv := []string{"/usr/bin/supervisord", "-c", "/etc/supervisord.conf"}
+
+	return func(c *dagger.Container) *dagger.Container {
+		return c.
+			WithExec([]string{
+				"bash", "-c", fmt.Sprintf("%s && %s", strings.Join(cmdSrv, " "), strings.Join(exec, " ")),
+			})
 	}
 }

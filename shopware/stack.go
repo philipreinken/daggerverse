@@ -17,6 +17,6 @@ func (s *Shopware) DevStack(ctx context.Context) *dagger.Service {
 		BasicStack(ctx).
 		With(WithFullInstall()).
 		WithExposedPort(8000).
-		WithExec([]string{"/usr/bin/supervisord", "-c", "/etc/supervisord.conf"}).
+		WithExec([]string{"/usr/bin/supervisord", "-c", "/etc/supervisord.conf", "--nodaemon"}).
 		AsService()
 }

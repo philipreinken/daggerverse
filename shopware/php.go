@@ -25,6 +25,7 @@ var (
 func (s *Shopware) Ecs(ctx context.Context) (string, error) {
 	return s.
 		BaseContainer(ctx).
+		With(WithTestEnvironment()).
 		With(WithCsFixerCache()).
 		WithExec([]string{"composer", "run", "ecs"}).
 		Stdout(ctx)
@@ -33,6 +34,7 @@ func (s *Shopware) Ecs(ctx context.Context) (string, error) {
 func (s *Shopware) LintChangelog(ctx context.Context) (string, error) {
 	return s.
 		BaseContainer(ctx).
+		With(WithTestEnvironment()).
 		WithExec([]string{"composer", "run", "lint:changelog"}).
 		Stdout(ctx)
 }
@@ -40,6 +42,7 @@ func (s *Shopware) LintChangelog(ctx context.Context) (string, error) {
 func (s *Shopware) LintSnippets(ctx context.Context) (string, error) {
 	return s.
 		BaseContainer(ctx).
+		With(WithTestEnvironment()).
 		WithExec([]string{"composer", "run", "lint:snippets"}).
 		Stdout(ctx)
 }
@@ -47,6 +50,7 @@ func (s *Shopware) LintSnippets(ctx context.Context) (string, error) {
 func (s *Shopware) Phpstan(ctx context.Context) (string, error) {
 	return s.
 		BasicStack(ctx).
+		With(WithTestEnvironment()).
 		With(WithInstall()).
 		WithExec([]string{"composer", "run", "framework:schema:dump"}).
 		WithExec([]string{"composer", "run", "phpstan"}).
@@ -74,7 +78,7 @@ func (s *Shopware) Phpunit(
 	// +default=true
 	stopOnFailure bool,
 ) *dagger.Container {
-	cmd := []string{"php", "-d", "memory_limit=-1", "vendor/bin/phpunit", "--testsuite", testsuite}
+	cmd := []string{"php", "-d", "memory_limit=-1", "vendor/bin/phpunit", "-d", "error_reporting=E_ALL", "--testsuite", testsuite}
 
 	if stopOnFailure {
 		cmd = append(cmd, "--stop-on-failure")
@@ -90,17 +94,19 @@ func (s *Shopware) Phpunit(
 
 	c := s.
 		BasicStack(ctx).
-		WithEnvVariable("APP_ENV", "test")
+		With(WithTestEnvironment())
 
 	if testsuite != "unit" {
 		c = c.With(WithTestInstall())
 	}
 
 	if testsuite == "integration" {
-		c = c.With(WithWebserver(c))
+		return c.
+			With(WithWebServerAndExec(cmd))
 	}
 
-	return c.WithExec(cmd)
+	return c.
+		WithExec(cmd)
 }
 
 func (s *Shopware) PhpunitUnit(
@@ -195,6 +201,16 @@ func (s *Shopware) PhpunitIntegrationAllParallel(
 	}
 
 	return output, g.Wait()
+}
+
+func WithTestEnvironment() dagger.WithContainerFunc {
+	return func(c *dagger.Container) *dagger.Container {
+		return c.
+			With(EnvVariables(map[string]string{
+				"APP_ENV":               "test",
+				"BLUE_GREEN_DEPLOYMENT": "1",
+			}))
+	}
 }
 
 func WithCsFixerCache() dagger.WithContainerFunc {

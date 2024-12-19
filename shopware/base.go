@@ -39,6 +39,7 @@ func WithBuildDependencies() dagger.WithContainerFunc {
 			WithFile("/usr/local/bin/composer", dag.Container().From("composer:2").File("/usr/bin/composer")).
 			WithUser("root:root").
 			WithExec([]string{"apk", "add", "--no-cache", "nodejs", "npm", "bash"}).
+			WithExec([]string{"sed", "-i", "s/nodaemon=true/nodaemon=false/g", "/etc/supervisord.conf"}).
 			WithUser(shopwareUser)
 	}
 }
@@ -49,7 +50,7 @@ func WithBaseEnvironment() dagger.WithContainerFunc {
 			With(EnvVariables(map[string]string{
 				"APP_ENV":                      "dev",
 				"APP_DEBUG":                    "1",
-				"APP_URL":                      "http://127.0.0.1:8000",
+				"APP_URL":                      "http://localhost:8000",
 				"APP_SECRET":                   base64.RawURLEncoding.EncodeToString([]byte("0000AAAAshopware0000AAAAshopware")),
 				"BLUE_GREEN_DEPLOYMENT":        "0",
 				"COMPOSER_PLUGIN_LOADER":       "1",
