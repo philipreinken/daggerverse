@@ -176,7 +176,7 @@ func (s *Shopware) PhpunitIntegrationAllParallel(
 	ctx context.Context,
 	// number of parallel tests to run
 	// +optional
-	// +default=4
+	// +default=2
 	parallel int,
 ) (string, error) {
 	var output string
@@ -188,6 +188,7 @@ func (s *Shopware) PhpunitIntegrationAllParallel(
 
 	for _, path := range integrationTestPaths {
 		path := path
+
 		g.Go(func() error {
 			out, err := s.
 				Phpunit(gctx, "integration", path, false, true).
@@ -195,7 +196,9 @@ func (s *Shopware) PhpunitIntegrationAllParallel(
 			if err != nil {
 				return err
 			}
+
 			output += out
+
 			return nil
 		})
 	}
