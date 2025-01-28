@@ -7,13 +7,13 @@ import (
 )
 
 // FIXME: This will only work in combination with a minio/S3 service, since the `public` directory is not synced between containers
-func WithWebserver(shopwareContainer *dagger.Container) dagger.WithContainerFunc {
-	shopware := shopwareContainer.
-		WithExposedPort(8000).
-		WithExec([]string{"/usr/bin/supervisord", "-c", "/etc/supervisord.conf"}).
-		AsService()
-
+func WithWebserver() dagger.WithContainerFunc {
 	return func(c *dagger.Container) *dagger.Container {
+		shopware := c.
+			WithExposedPort(8000).
+			WithExec([]string{"/usr/bin/supervisord", "-c", "/etc/supervisord.conf", "--nodaemon"}).
+			AsService()
+
 		return c.
 			WithServiceBinding("shopware", shopware).
 			With(EnvVariables(map[string]string{

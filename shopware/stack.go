@@ -12,7 +12,7 @@ func (s *Shopware) BasicStack(ctx context.Context) *dagger.Container {
 		With(WithDatabase())
 }
 
-func (s *Shopware) DevStack(ctx context.Context) *dagger.Service {
+func (s *Shopware) ShopwareService(ctx context.Context) *dagger.Service {
 	return s.
 		BasicStack(ctx).
 		With(WithFullInstall()).
